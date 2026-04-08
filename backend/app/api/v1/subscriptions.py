@@ -6,6 +6,7 @@ from datetime import date
 from typing import Optional
 from app.core.database import get_db
 from app.models.subscriptions import Subscription
+from app.core.auth import verify_token
 
 router = APIRouter()
 
@@ -16,7 +17,7 @@ class SubscriptionCreate(BaseModel):
     next_due_date: Optional[date] = None
 
 @router.post("")
-async def create_subscription(body: SubscriptionCreate, db: AsyncSession = Depends(get_db)):
+async def create_subscription(body: SubscriptionCreate, db: AsyncSession = Depends(get_db), _: None = Depends(verify_token)):
     sub = Subscription(name=body.name, amount=body.amount, cycle=body.cycle, next_due_date=body.next_due_date)
     db.add(sub)
     await db.commit()

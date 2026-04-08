@@ -6,6 +6,7 @@ from datetime import date
 from typing import Optional
 from app.core.database import get_db
 from app.models.expenses import Expense
+from app.core.auth import verify_token
 
 router = APIRouter()
 
@@ -17,7 +18,7 @@ class ExpenseCreate(BaseModel):
     account_id: Optional[str] = None
 
 @router.post("")
-async def create_expense(body: ExpenseCreate, db: AsyncSession = Depends(get_db)):
+async def create_expense(body: ExpenseCreate, db: AsyncSession = Depends(get_db), _: None = Depends(verify_token)):
     exp = Expense(
         amount=body.amount,
         category=body.category,

@@ -4,6 +4,7 @@ from sqlalchemy import select
 from pydantic import BaseModel
 from app.core.database import get_db
 from app.models.accounts import Account
+from app.core.auth import verify_token
 
 router = APIRouter()
 
@@ -12,7 +13,7 @@ class AccountCreate(BaseModel):
     balance: float = 0.0
 
 @router.post("")
-async def create_account(body: AccountCreate, db: AsyncSession = Depends(get_db)):
+async def create_account(body: AccountCreate, db: AsyncSession = Depends(get_db), _: None = Depends(verify_token)):
     acc = Account(name=body.name, balance=body.balance)
     db.add(acc)
     await db.commit()

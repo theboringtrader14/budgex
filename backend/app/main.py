@@ -14,7 +14,13 @@ app = FastAPI(title="BUDGEX API", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:3002",
+        "http://localhost:3000",
+        "https://budgex.lifexos.co.in",
+        "https://staax.lifexos.co.in",
+        "https://lifexos.co.in",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
