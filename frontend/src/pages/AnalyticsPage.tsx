@@ -86,7 +86,7 @@ function BarChart({ bars, color = VIVID }: { bars: { label: string; value: numbe
 export default function BudgexAnalyticsPage() {
   const [tab, setTab] = useState<'monthly' | 'yearly'>('monthly')
   const [trends, setTrends] = useState<any[]>([])
-  const [insight, setInsight] = useState<string | null>(null)
+  const [insights, setInsights] = useState<string[]>([])
   const [insightLoading, setInsightLoading] = useState(false)
 
   const now = new Date()
@@ -101,8 +101,18 @@ export default function BudgexAnalyticsPage() {
   const loadInsight = () => {
     setInsightLoading(true)
     analyticsAPI.insights()
-      .then((r) => setInsight(r.data?.insight || null))
-      .catch(() => setInsight('Your spending this month is on track.'))
+      .then((r) => {
+        const data = r.data
+        if (Array.isArray(data?.insights) && data.insights.length > 0) {
+          setInsights(data.insights)
+        } else if (typeof data?.insight === 'string') {
+          // backwards compat with old single-string response
+          setInsights([data.insight])
+        } else {
+          setInsights([])
+        }
+      })
+      .catch(() => setInsights(['Your spending this month is on track.']))
       .finally(() => setInsightLoading(false))
   }
 
@@ -267,18 +277,49 @@ export default function BudgexAnalyticsPage() {
             {insightLoading ? 'Thinking…' : 'Refresh'}
           </button>
         </div>
-        <p
-          style={{
-            fontSize: '13px',
-            color: '#F0F0FF',
-            fontFamily: 'var(--font-body)',
-            lineHeight: 1.6,
-          }}
-        >
-          {insightLoading
-            ? 'Analyzing your spending patterns…'
-            : insight || 'Your spending this month is on track.'}
-        </p>
+        {insightLoading ? (
+          <p
+            style={{
+              fontSize: '13px',
+              color: 'rgba(232,232,248,0.5)',
+              fontFamily: 'var(--font-body)',
+              lineHeight: 1.6,
+            }}
+          >
+            Analyzing your spending patterns…
+          </p>
+        ) : insights.length > 0 ? (
+          <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {insights.map((item, idx) => (
+              <li
+                key={idx}
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 8,
+                  fontSize: '13px',
+                  color: '#F0F0FF',
+                  fontFamily: 'var(--font-body)',
+                  lineHeight: 1.6,
+                }}
+              >
+                <span style={{ color: '#A78BFA', flexShrink: 0, marginTop: 2 }}>•</span>
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p
+            style={{
+              fontSize: '13px',
+              color: 'rgba(232,232,248,0.5)',
+              fontFamily: 'var(--font-body)',
+              lineHeight: 1.6,
+            }}
+          >
+            Your spending this month is on track.
+          </p>
+        )}
       </div>
 
       {/* Monthly tab */}

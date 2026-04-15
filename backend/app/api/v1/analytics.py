@@ -3,7 +3,7 @@ import logging
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
-from datetime import date
+from datetime import date, timedelta
 from app.core.database import get_db
 from app.models.expenses import Expense
 
@@ -33,73 +33,95 @@ def _get_client():
 @router.get("/insights")
 async def get_insights(db: AsyncSession = Depends(get_db)):
     today = date.today()
-    m = today.month
-    y = today.year
+    since = today - timedelta(days=30)
 
-    # This month spend
+    # Fetch last 30 days of expenses grouped by category
     res = await db.execute(
-        select(func.sum(Expense.amount)).where(
-            func.extract("month", Expense.date) == m,
-            func.extract("year", Expense.date) == y,
-        )
-    )
-    this_month = float(res.scalar() or 0)
-
-    # Last month spend
-    lm = m - 1 if m > 1 else 12
-    ly = y if m > 1 else y - 1
-    res2 = await db.execute(
-        select(func.sum(Expense.amount)).where(
-            func.extract("month", Expense.date) == lm,
-            func.extract("year", Expense.date) == ly,
-        )
-    )
-    last_month = float(res2.scalar() or 0)
-
-    # Top category this month
-    res3 = await db.execute(
         select(Expense.category, func.sum(Expense.amount).label("total"))
-        .where(
-            func.extract("month", Expense.date) == m,
-            func.extract("year", Expense.date) == y,
-        )
+        .where(Expense.date >= since, Expense.date <= today)
         .group_by(Expense.category)
         .order_by(func.sum(Expense.amount).desc())
-        .limit(1)
     )
-    row = res3.first()
-    top_cat = row[0] if row else "None"
-    top_cat_amt = float(row[1]) if row else 0
+    rows = res.all()
 
-    MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-              'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-    context = (
-        f"This month ({MONTHS[m-1]} {y}): ₹{this_month:,.0f} spent. "
-        f"Last month ({MONTHS[lm-1]} {ly}): ₹{last_month:,.0f} spent. "
-        f"Top category this month: {top_cat} at ₹{top_cat_amt:,.0f}."
-    )
+    # Build category summary string
+    if rows:
+        cat_lines = ", ".join(
+            f"{row[0]}: ₹{float(row[1]):,.0f}" for row in rows
+        )
+        total_30d = sum(float(row[1]) for row in rows)
+        data_summary = (
+            f"Last 30 days total spend: ₹{total_30d:,.0f}. "
+            f"By category — {cat_lines}."
+        )
+    else:
+        data_summary = "No expenses recorded in the last 30 days."
+
+    # Fallback insights (used when Gemma is unavailable)
+    fallback = _build_fallback_insights(rows)
 
     client = _get_client()
     if client is None:
-        return {"insight": f"Your spending this month is on track. {context}"}
+        return {"insights": fallback}
 
     prompt = (
-        "You are LIFEX, a personal finance AI for Karthikeyan. "
-        "Give a 1-2 sentence insight about his spending. "
-        "Be warm, direct, specific with rupee numbers. No markdown.\n\n"
-        f"Data: {context}"
+        "You are LIFEX, a personal finance AI. "
+        "Here are the last 30 days of expenses by category: "
+        f"{data_summary} "
+        "Give exactly 3 bullet-point insights about spending patterns. "
+        "Each insight must be a single sentence. "
+        "Be specific with rupee amounts. No markdown, no bullet symbols — "
+        "return each insight as a plain sentence on its own line."
     )
+
     try:
         from google.genai import types
         response = client.models.generate_content(
             model=MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(
-                max_output_tokens=120,
+                max_output_tokens=200,
                 temperature=0.4,
             ),
         )
-        return {"insight": response.text.strip()}
+        raw = response.text.strip()
+        # Split into list of non-empty lines, take up to 3
+        lines = [ln.strip().lstrip("-•* ").strip() for ln in raw.splitlines()]
+        insights = [ln for ln in lines if ln][:3]
+        # Pad with fallback if Gemma returned fewer than 3 lines
+        if len(insights) < 3:
+            insights += fallback[len(insights):3]
+        return {"insights": insights}
     except Exception as e:
         logger.warning(f"[analytics] Gemma call failed: {e}")
-        return {"insight": f"Your spending this month is on track. {context}"}
+        return {"insights": fallback}
+
+
+def _build_fallback_insights(rows) -> list:
+    """Generate basic rule-based insights when AI is unavailable."""
+    if not rows:
+        return [
+            "No expenses recorded in the last 30 days.",
+            "Start tracking your spending to see insights here.",
+            "Add your first expense to get personalised analysis.",
+        ]
+
+    total = sum(float(r[1]) for r in rows)
+    top_cat = rows[0][0]
+    top_amt = float(rows[0][1])
+    top_pct = round((top_amt / total) * 100) if total > 0 else 0
+
+    insights = [
+        f"Your total spend over the last 30 days is ₹{total:,.0f}.",
+        f"{top_cat} is your top spending category at ₹{top_amt:,.0f} ({top_pct}% of total).",
+    ]
+    if len(rows) >= 2:
+        second_cat = rows[1][0]
+        second_amt = float(rows[1][1])
+        insights.append(
+            f"{second_cat} is your second highest category at ₹{second_amt:,.0f}."
+        )
+    else:
+        insights.append("Track more categories to get a fuller picture of your spending.")
+
+    return insights
