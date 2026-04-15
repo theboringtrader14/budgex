@@ -1,4 +1,7 @@
 """BUDGEX Analytics — AI insights via Gemma 4."""
+# REQUIRED: Add GOOGLE_AI_API_KEY=<your-key> to .env to enable Gemma AI insights
+# Without it, insights fall back to rule-based analysis from real DB data (still useful)
+# Get key from: https://aistudio.google.com/app/apikey
 import logging
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
